@@ -5,6 +5,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.modalview import ModalView
 from algorithm.text_loader import measure_text_progress, split_text
+from algorithm.saving import set_font_size, get_font_size, set_book_progress, get_book_progress
 from kivy.core.window import Window
 from kivy.uix.label import Label
 from plyer import filechooser
@@ -12,8 +13,6 @@ from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
-if platform == 'android':
-    from android.permissions import request_permissions, Permission
 
 class ClickableLabel(ButtonBehavior, Label):
     pass
@@ -63,15 +62,8 @@ class HomeScreen(Screen):
         self.manager.get_screen('reader').load_text(instance.text.split(' - ')[0])
 
     def show_upload_modal(self, instance):
-        if platform == 'android' and (not self.has_permission):
-            request_permissions([Permission.READ_EXTERNAL_STORAGE], self.on_permission_callback)
-            return
         modal = UploadModal(self)
         modal.open()
-
-    def on_permission_callback(self, permissions, grant_results):
-        self.has_permission = True
-        self.show_upload_modal()
 
     def delete_book(self, filename):
         os.remove(os.path.join('books/', filename))
@@ -85,7 +77,9 @@ class ReaderScreen(Screen):
     def __init__(self, **kwargs):
         super(ReaderScreen, self).__init__(**kwargs)
         self.current_page = 0
-        self.font_size = 32
+        self.font_size = get_font_size()
+        self.bookname = ''
+        self.page_start = 0
 
         main_layout = BoxLayout(orientation='vertical')
 
@@ -132,18 +126,25 @@ class ReaderScreen(Screen):
         self.add_widget(main_layout)
 
     def load_text(self, filename):
+        self.bookname = filename
         with open(f"./books/{filename}.txt", 'r') as file:
             self.full_text = split_text(file.read())
             self.text_end = len(self.full_text) - 1
 
         self.reset_page()
-        self.current_start = 0
-        self.update_text()
+        self.find_bookmark()
+
+    def find_bookmark(self):
+        bookmark = get_book_progress(self.bookname)
+        while self.page_end < bookmark:
+            self.next_page(False)
+        self.page_flipped()
 
     def return_home(self, *args):
         self.manager.current = 'home'
 
     def update_text(self):
+        set_font_size(self.font_size)
         self.text_label.font_size = self.font_size
         self.update_page_end()
         self.text_label.text = " ".join(self.full_text[self.page_start:self.page_end])
@@ -153,6 +154,7 @@ class ReaderScreen(Screen):
         self.page_end = measure_text_progress(self.font_size,
               int (Window.size[0] - self.window_margin_width),
               int(self.window_scale_height * Window.size[1]), self.full_text, self.page_start)
+        set_book_progress(self.bookname, self.page_end)
 
     def next_page(self, flipped = True):
         if self.page_end >= self.text_end:
@@ -169,8 +171,9 @@ class ReaderScreen(Screen):
 
     def next_page_10(self, *args):
         for i in range(10):
-            if not self.next_page():
+            if not self.next_page(False):
                 break
+        self.page_flipped()
 
     def prev_page(self, flipped = True):
         if self.page_start == 0:
@@ -187,8 +190,9 @@ class ReaderScreen(Screen):
 
     def prev_page_10(self, *args):
         for i in range(10):
-            if not self.prev_page():
+            if not self.prev_page(False):
                 break
+        self.page_flipped()
 
     def increase_font(self, *args):
         if self.font_size > 128:

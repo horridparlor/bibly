@@ -5,3 +5,4 @@ bin/
 *.txt
 .idea/
 *.pyc
+*.json
