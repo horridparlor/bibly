@@ -1,51 +1,138 @@
+import os
 from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.modalview import ModalView
 from algorithm.text_loader import measure_text_progress, split_text
 from kivy.core.window import Window
-from kivy.clock import Clock
+from kivy.uix.label import Label
+from plyer import filechooser
+from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
-from kivy.properties import StringProperty, NumericProperty
+if platform == 'android':
+    from android.permissions import request_permissions, Permission
 
-class BookItem(BoxLayout):
-    book_name = StringProperty('')
-    page_number = NumericProperty(0)
-    reading_progress = NumericProperty(0)
+class ClickableLabel(ButtonBehavior, Label):
+    pass
+
 
 class HomeScreen(Screen):
-    availableBooks = [
-        {'name': 'Book 1', 'page': 100, 'progress': 30},
-        {'name': 'Book 2', 'page': 200, 'progress': 60},
-        # Add more books as needed
-    ]
-
     def __init__(self, **kwargs):
         super(HomeScreen, self).__init__(**kwargs)
 
-    def on_enter(self):
-        Clock.schedule_once(lambda dt: self.load_books(), 0)
+        self.scroll_view = ScrollView()
+        self.add_widget(self.scroll_view)
 
-    def load_books(self):
-        data = [
-            {'book_name': book['name'], 'page_number': book['page'], 'reading_progress': book['progress']}
-            for book in self.availableBooks
-        ]
-        print(data)
-        print(self.ids)
+        self.grid_layout = GridLayout(cols=3, spacing=10, size_hint_y=None)
+        self.grid_layout.bind(minimum_height=self.grid_layout.setter('height'))
+
+        self.scroll_view.add_widget(self.grid_layout)
+        self.load_texts()
+        self.has_permission = False
+
+    def load_texts(self):
+        self.grid_layout.clear_widgets()
+        for filename in os.listdir('books/'):
+            if filename.endswith('.txt'):
+                with open(os.path.join('books/', filename), 'r') as file:
+                    text_content = file.read()
+                word_count = len(text_content.split())
+
+                book_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=60)
+
+                btn = Button(text=f'{os.path.splitext(filename)[0]} - {word_count} words')
+                btn.bind(on_press=self.open_reader)
+
+                delete_btn = Button(text='X', size_hint_x=None, width=60, background_color=(1, 0, 0, 1))
+                delete_btn.bind(on_press=lambda btn, filename=filename: self.delete_book(filename))
+
+                book_layout.add_widget(btn)
+                book_layout.add_widget(delete_btn)
+
+                self.grid_layout.add_widget(book_layout)
+
+        self.add_text_button = Button(text='Add New Text', size_hint_y=None, height=80, background_color=(0, 1, 0.5, 1))
+        self.add_text_button.bind(on_press=self.show_upload_modal)
+        self.grid_layout.add_widget(self.add_text_button)
+
+    def open_reader(self, instance):
+        self.manager.current = 'reader'
+        self.manager.get_screen('reader').load_text(instance.text.split(' - ')[0])
+
+    def show_upload_modal(self, instance):
+        if platform == 'android' and (not self.has_permission):
+            request_permissions([Permission.READ_EXTERNAL_STORAGE], self.on_permission_callback)
+            return
+        modal = UploadModal(self)
+        modal.open()
+
+    def on_permission_callback(self, permissions, grant_results):
+        self.has_permission = True
+        self.show_upload_modal()
+
+    def delete_book(self, filename):
+        os.remove(os.path.join('books/', filename))
+        self.load_texts()
+
 
 class ReaderScreen(Screen):
     window_margin_width = 40
-    window_scale_height = 0.76
-    font_size = 32
+    window_scale_height = 0.72
 
     def __init__(self, **kwargs):
         super(ReaderScreen, self).__init__(**kwargs)
+        self.current_page = 0
+        self.font_size = 32
 
-    def on_enter(self, *args):
-        Clock.schedule_once(lambda dt: self.load_text(), 0)
+        main_layout = BoxLayout(orientation='vertical')
 
-    def load_text(self):
-        with open('./data/mystory.txt', 'r') as file:
+        nav_layout = BoxLayout(size_hint_y=None, height=70)
+        prev_page_10_button = Button(text='<<', size_hint_x=1.2, background_color=(0.1, 0.1, 0.1, 1), opacity=0.2)
+        prev_page_10_button.bind(on_press=self.prev_page_10)
+        nav_layout.add_widget(prev_page_10_button)
+
+        self.page_label = ClickableLabel(opacity=0.2)
+        self.page_label.bind(on_press=self.return_home)
+        nav_layout.add_widget(self.page_label)
+
+        next_page_10_button = Button(text='>>', size_hint_x=1.2, background_color=(0.1, 0.1, 0.1, 1), opacity=0.1)
+        next_page_10_button.bind(on_press=self.next_page_10)
+        nav_layout.add_widget(next_page_10_button)
+
+        main_layout.add_widget(nav_layout)
+
+        content_layout = BoxLayout(orientation='vertical', spacing=10)
+
+        self.text_label = Label(size_hint=(1, 1))
+        self.text_label.bind(width=lambda instance, value: setattr(instance, 'text_size', (value - 40, None)))
+        content_layout.add_widget(self.text_label)
+
+        font_nav_layout = BoxLayout(size_hint_y=None, height=70, opacity=0.2)
+        prev_page_button = Button(text='<')
+        prev_page_button.bind(on_press=self.prev_page)
+        font_nav_layout.add_widget(prev_page_button)
+
+        decrease_font_button = Button(text='A-', size_hint_x=0.5, background_color=(0.1, 0.1, 0.1, 1))
+        decrease_font_button.bind(on_press=self.decrease_font)
+        font_nav_layout.add_widget(decrease_font_button)
+
+        increase_font_button = Button(text='A+', size_hint_x=0.5, background_color=(0.1, 0.1, 0.1, 1))
+        increase_font_button.bind(on_press=self.increase_font)
+        font_nav_layout.add_widget(increase_font_button)
+
+        next_page_button = Button(text='>')
+        next_page_button.bind(on_press=self.next_page)
+        font_nav_layout.add_widget(next_page_button)
+        content_layout.add_widget(font_nav_layout)
+
+        main_layout.add_widget(content_layout)
+        self.add_widget(main_layout)
+
+    def load_text(self, filename):
+        with open(f"./books/{filename}.txt", 'r') as file:
             self.full_text = split_text(file.read())
             self.text_end = len(self.full_text) - 1
 
@@ -53,11 +140,14 @@ class ReaderScreen(Screen):
         self.current_start = 0
         self.update_text()
 
+    def return_home(self, *args):
+        self.manager.current = 'home'
+
     def update_text(self):
-        self.ids.text_label.font_size = self.font_size
+        self.text_label.font_size = self.font_size
         self.update_page_end()
-        self.ids.text_label.text = " ".join(self.full_text[self.page_start:self.page_end])
-        self.ids.page_label.text = f'Page {self.page_number + 1}'
+        self.text_label.text = " ".join(self.full_text[self.page_start:self.page_end])
+        self.page_label.text = f'Page {self.page_number + 1}'
 
     def update_page_end(self):
         self.page_end = measure_text_progress(self.font_size,
@@ -77,7 +167,7 @@ class ReaderScreen(Screen):
             self.page_flipped()
         return True
 
-    def next_page_10(self):
+    def next_page_10(self, *args):
         for i in range(10):
             if not self.next_page():
                 break
@@ -95,18 +185,18 @@ class ReaderScreen(Screen):
         self.current_start = self.page_start
         self.update_text()
 
-    def prev_page_10(self):
+    def prev_page_10(self, *args):
         for i in range(10):
             if not self.prev_page():
                 break
 
-    def increase_font(self):
+    def increase_font(self, *args):
         if self.font_size > 128:
             return
         self.font_size += 8
         self.font_updated()
 
-    def decrease_font(self):
+    def decrease_font(self, *args):
         if self.font_size <= 16:
             return
         self.font_size -= 8
@@ -124,13 +214,67 @@ class ReaderScreen(Screen):
         self.page_starts = []
         self.page_number = 0
 
-screenManager = ScreenManager()
-screenManager.add_widget(HomeScreen(name='home'))
-screenManager.add_widget(ReaderScreen(name='reader'))
+    def go_back(self, instance):
+        self.manager.current = 'home'
 
-class BiblyApp(App):
+
+class UploadModal(ModalView):
+    def __init__(self, home_screen, **kwargs):
+        super(UploadModal, self).__init__(**kwargs)
+        self.home_screen = home_screen
+        self.layout = BoxLayout(orientation='vertical')
+
+        top_row = BoxLayout(orientation='horizontal', size_hint=(1, None), height=64)
+
+        self.file_label = Label(text='No file selected', halign='left', size_hint=(1, 1))
+        top_row.add_widget(self.file_label)
+
+        close_button = Button(text='X', size_hint=(None, None), size=(64, 64))
+        close_button.bind(on_press=self.dismiss_modal)
+        top_row.add_widget(close_button)
+
+        self.layout.add_widget(top_row)
+
+        open_button = Button(text='Open', size_hint=(1, 0.1))
+        open_button.bind(on_press=self.open_filechooser)
+        self.layout.add_widget(open_button)
+
+        upload_button = Button(text='Upload', size_hint=(1, 0.1))
+        upload_button.bind(on_press=self.upload_file)
+        self.layout.add_widget(upload_button)
+        self.add_widget(self.layout)
+
+        self.selected_file = None
+
+    def dismiss_modal(self, instance):
+        self.dismiss()
+
+    def open_filechooser(self, instance):
+        self.selected_file = filechooser.open_file(filters=['*.txt'])
+        if self.selected_file:
+            filename = os.path.basename(self.selected_file[0])
+            self.file_label.text = filename
+    def upload_file(self, instance):
+        if self.selected_file:
+            try:
+                filename = os.path.basename(self.selected_file[0])
+                os.makedirs('books/', exist_ok=True)
+                with open(self.selected_file[0], 'r') as file:
+                    content = file.read()
+                with open(f'books/{filename}', 'w') as file:
+                    file.write(content)
+                self.home_screen.load_texts()
+                self.dismiss()
+            except Exception as e:
+                print(f'Error: {e}')
+
+
+class BookApp(App):
     def build(self):
-        return screenManager
+        sm = ScreenManager()
+        sm.add_widget(HomeScreen(name='home'))
+        sm.add_widget(ReaderScreen(name='reader'))
+        return sm
 
 if __name__ == '__main__':
-    BiblyApp().run()
+    BookApp().run()
