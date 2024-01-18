@@ -1,0 +1,7 @@
+.buildozer/
+icon_256.png
+icon_2048.png
+bin/
+data/
+.idea/
+*.pyc
