@@ -1,14 +1,14 @@
-import json
+from kivy.storage.jsonstore import JsonStore
 def load_data():
-    try:
-        with open('save.json', 'r') as file:
-            return json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
+    store = JsonStore('save.json')
+    if store.exists('data'):
+        return store.get('data')['value']
+    else:
         return {"books": {}, "fontSize": 12}
 
 def save_data(data):
-    with open('save.json', 'w') as file:
-        json.dump(data, file, indent=4)
+    store = JsonStore('save.json')
+    store.put('data', value=data)
 
 def get_book_progress(book_name):
     data = load_data()
