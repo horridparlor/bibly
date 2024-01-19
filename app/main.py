@@ -109,6 +109,14 @@ class ReaderScreen(Screen):
         prev_page_button.bind(on_press=self.prev_page)
         font_nav_layout.add_widget(prev_page_button)
 
+        invisible_prev_button = Button(size_hint=(None, None), size=(100,
+            self.window_scale_height * Window.size[0]),
+            opacity=1, background_color=(0, 0, 0, 1))
+        invisible_prev_button.bind(on_press=self.prev_page)
+        invisible_prev_button.y = prev_page_button.top
+        invisible_prev_button.pos_hint = {'left': 1, 'y': 0}
+        self.add_widget(invisible_prev_button)
+
         decrease_font_button = Button(text='A-', size_hint_x=0.5, background_color=(0.1, 0.1, 0.1, 1))
         decrease_font_button.bind(on_press=self.decrease_font)
         font_nav_layout.add_widget(decrease_font_button)
@@ -121,6 +129,14 @@ class ReaderScreen(Screen):
         next_page_button.bind(on_press=self.next_page)
         font_nav_layout.add_widget(next_page_button)
         content_layout.add_widget(font_nav_layout)
+
+        invisible_next_button = Button(size_hint=(None, None), size=(100,
+            self.window_scale_height * Window.size[0]),
+            opacity=1, background_color=(0, 0, 0, 1))
+        invisible_next_button.bind(on_press=self.next_page)
+        invisible_next_button.y = next_page_button.top
+        invisible_next_button.pos_hint = {'right': 1, 'y': 0}
+        self.add_widget(invisible_next_button)
 
         main_layout.add_widget(content_layout)
         self.add_widget(main_layout)
